@@ -8,7 +8,7 @@ import (
 //	"strings"
 
 	//"appengine"
-	"log"
+	"github.com/golang/glog"
 )
 
 // Levels that can be specified for a LogMessage.
@@ -109,19 +109,18 @@ func (s *BackendService) GetFirstConfig(r *http.Request, _ *VoidMessage, resp *A
 
 func writeLogMessage(level logLevel, msg string) {
 	const fmt = "%s"
-	log.Printf(fmt, msg)
-	/*switch level {
+	switch level {
 	case levelDebug:
-		c.Debugf(fmt, msg)
+		glog.Infof(fmt, msg)
 	case levelWarning:
-		c.Warningf(fmt, msg)
+		glog.Warningf(fmt, msg)
 	case levelError:
-		c.Errorf(fmt, msg)
+		glog.Errorf(fmt, msg)
 	case levelCritical:
-		c.Criticalf(fmt, msg)
+		glog.Fatalf(fmt, msg)
 	default:
-		c.Infof(fmt, msg)
-	}*/
+		glog.Infof(fmt, msg)
+	}
 }
 
 func newBackendService(server *Server) *BackendService {

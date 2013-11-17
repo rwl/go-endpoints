@@ -8,7 +8,7 @@ import (
 //	"strings"
 
 	//"appengine"
-	"github.com/golang/glog"
+	"log"
 )
 
 // Levels that can be specified for a LogMessage.
@@ -111,15 +111,19 @@ func writeLogMessage(level logLevel, msg string) {
 	const fmt = "%s"
 	switch level {
 	case levelDebug:
-		glog.Infof(fmt, msg)
+		//log.Infof(fmt, msg)
+		log.Printf(fmt, msg)
 	case levelWarning:
-		glog.Warningf(fmt, msg)
+		//log.Warningf(fmt, msg)
+		log.Printf(fmt, msg)
 	case levelError:
-		glog.Errorf(fmt, msg)
+		//log.Errorf(fmt, msg)
+		log.Printf(fmt, msg)
 	case levelCritical:
-		glog.Fatalf(fmt, msg)
+		log.Fatalf(fmt, msg)
 	default:
-		glog.Infof(fmt, msg)
+		//log.Infof(fmt, msg)
+		log.Printf(fmt, msg)
 	}
 }
 

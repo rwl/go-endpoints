@@ -1,4 +1,4 @@
-// Default implementation of Context interface.
+// Default implementation of Provider interface.
 // You can swap this with a stub implementation in tests like so:
 // 
 //		func stubContextFactory(r *http.Request) endpoints.Context {
@@ -18,20 +18,14 @@
 //			// stubContextFactory(r) now.
 //		}
 
-package endpoints
+package google
 
 import (
 	"net/http"
 	"sync"
-
-	"appengine"
-	"appengine/user"
-
-	pb "appengine_internal/user"
 )
 
-type cachingContext struct {
-	appengine.Context
+type cachingProvider struct {
 	r *http.Request
 	// map keys are scopes
 	oauthResponseCache map[string]*pb.GetOAuthUserResponse

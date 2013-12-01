@@ -82,23 +82,20 @@ type User interface {
 	AuthDomain() string
 }
 
-type OAuthUser struct {
-	id string
+type JwtUser struct {
 	email string
-	domain string
-//	Admin bool
 }
 
-func (u *OAuthUser) UserId() string {
-	return u.id
+func (u *JwtUser) UserId() string {
+	return ""
 }
 
-func (u *OAuthUser) Email() string {
+func (u *JwtUser) Email() string {
 	return u.email
 }
 
-func (u *OAuthUser) AuthDomain() string {
-	return u.domain
+func (u *JwtUser) AuthDomain() string {
+	return ""
 }
 
 // GetToken looks for Authorization header and returns a token.
@@ -441,9 +438,7 @@ func currentIDTokenUser(cp CertProvider, jwt string, audiences []string, clientI
 
 	err = verifyParsedToken(cp, *parsedToken, audiences, clientIDs)
 	if err == nil {
-		return &OAuthUser{
-			email: parsedToken.Email,
-		}, nil
+		return &JwtUser{parsedToken.Email}, nil
 	}
 
 	return nil, errors.New("No ID token user found.")

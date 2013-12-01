@@ -23,7 +23,7 @@ const Issuer = "accounts.google.com"
 // Made variable for testing purposes.
 var tokeninfoEndpointUrl = "https://www.googleapis.com/oauth2/v2/tokeninfo"
 
-type tokeninfo struct {
+type GoogleUser struct {
 	IssuedTo      string `json:"issued_to"`
 	Audience      string `json:"audience"`
 	UserId        string `json:"user_id"`
@@ -37,8 +37,20 @@ type tokeninfo struct {
 	ErrorDescription string `json:"error_description"`
 }
 
+func (u *GoogleUser) UserId() string {
+	return u.UserId
+}
+
+func (u *GoogleUser) Email() string {
+	return u.Email
+}
+
+func (u *GoogleUser) AuthDomain() string {
+	return Issuer
+}
+
 // fetchTokeninfo retrieves token info from tokeninfoEndpointUrl (tokeninfo API)
-func fetchTokeninfo(token string) (*tokeninfo, error) {
+func fetchTokeninfo(token string) (*GoogleUser, error) {
 	url := tokeninfoEndpointUrl + "?access_token=" + token
 	log.Printf("Fetching token info from %q", url)
 	resp, err := http.Get(url)
@@ -47,7 +59,7 @@ func fetchTokeninfo(token string) (*tokeninfo, error) {
 	}
 	defer resp.Body.Close()
 
-	ti := &tokeninfo{}
+	ti := &GoogleUser{}
 	if err = json.NewDecoder(resp.Body).Decode(ti); err != nil {
 		return nil, err
 	}
@@ -73,7 +85,7 @@ func fetchTokeninfo(token string) (*tokeninfo, error) {
 
 // getScopedTokeninfo validates fetched token by matching tokeinfo.Scope
 // with scope arg.
-func getScopedTokeninfo(req *http.Request, scope string) (*tokeninfo, error) {
+func getScopedTokeninfo(req *http.Request, scope string) (*GoogleUser, error) {
 	token := endpoints.GetToken(req)
 	if token == "" {
 		return nil, errors.New("No token found")
@@ -116,7 +128,7 @@ func (p *TokenInfoProvider) CurrentOAuthUser(req *http.Request, scope string) (*
 	if err != nil {
 		return nil, err
 	}
-	return &endpoints.OAuthUser{email: ti.Email}, nil
+	return ti, nil
 }
 
 func (p *TokenInfoProvider) CachedCerts() *endpoints.CertsList {

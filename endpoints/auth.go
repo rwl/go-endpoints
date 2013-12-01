@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 	"log"
+	"io/ioutil"
 )
 
 const (
@@ -32,7 +33,7 @@ var (
 	// 
 	// endpoints package code should always call jwtParser()
 	// instead of directly invoking verifySignedJwt().
-	jwtParser = VerifySignedJwt
+//	jwtParser = verifySignedJwt
 
 	// currentUTC returns current time in UTC.
 	// This is a variable on purpose to be able to stub during testing.
@@ -190,8 +191,7 @@ func getCachedCerts(cp CertProvider) (*CertsList, error) {
 	clientProvider, ok := cp.(ClientProvider)
 	if ok {
 		client = clientProvider.Client()
-	}
-	else {
+	} else {
 		client = &http.Client{}
 	}
 	resp, err := client.Get(cp.CertUri())
@@ -271,7 +271,7 @@ func contains(strList []string, value string) bool {
 	return false
 }
 
-// VerifySignedJwt decodes and verifies JWT token string.
+// verifySignedJwt decodes and verifies JWT token string.
 // 
 // Verification is based on
 //   - a certificate exponent and modulus
@@ -285,7 +285,7 @@ func contains(strList []string, value string) bool {
 // (Issuer, Audience, ClientID, etc.)
 // 
 // NOTE: do not call this function directly, use jwtParser() instead.
-func VerifySignedJwt(cp CertProvider, jwt string, now int64) (*signedJWT, error) {
+func verifySignedJwt(cp CertProvider, jwt string, now int64) (*signedJWT, error) {
 	segments := strings.Split(jwt, ".")
 	if len(segments) != 3 {
 		return nil, fmt.Errorf("Wrong number of segments in token: %s", jwt)
@@ -388,12 +388,12 @@ func VerifySignedJwt(cp CertProvider, jwt string, now int64) (*signedJWT, error)
 	return &token, nil
 }
 
-// VerifyParsedToken performs further verification of a parsed JWT token and
+// verifyParsedToken performs further verification of a parsed JWT token and
 // checks for the validity of Issuer, Audience, ClientID and Email fields.
 // 
 // Returns nil if token passes verification and can be accepted as indicated
 // by audiences and clientIDs args.
-func VerifyParsedToken(cp CertProvider, token signedJWT, audiences []string, clientIDs []string) bool {
+var verifyParsedToken = func(cp CertProvider, token signedJWT, audiences []string, clientIDs []string) bool {
 	// Verify the issuer.
 	if token.Issuer != cp.Issuer() {
 		return fmt.Errorf("Issuer was not valid: %s", token.Issuer)
@@ -434,12 +434,12 @@ func VerifyParsedToken(cp CertProvider, token signedJWT, audiences []string, cli
 // 
 // Currently, only Email field will be set in case of success.
 func currentIDTokenUser(cp CertProvider, jwt string, audiences []string, clientIDs []string, now int64) (*User, error) {
-	parsedToken, err := jwtParser(cp, jwt, now)
+	parsedToken, err := verifySignedJwt(cp, jwt, now)
 	if err != nil {
 		return nil, err
 	}
 
-	err = VerifyParsedToken(cp, *parsedToken, audiences, clientIDs)
+	err = verifyParsedToken(cp, *parsedToken, audiences, clientIDs)
 	if err == nil {
 		return &OAuthUser{
 			email: parsedToken.Email,

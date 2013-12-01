@@ -1,4 +1,4 @@
-package oauth
+package endpoints
 
 import (
 	"bytes"
@@ -17,6 +17,7 @@ import (
 	"code.google.com/p/goprotobuf/proto"
 
 	tu "github.com/crhym3/aegot/testutils"
+	"net/http/httptest"
 )
 
 func TestGetToken(t *testing.T) {
@@ -42,7 +43,7 @@ func TestGetToken(t *testing.T) {
 		}
 		r := &http.Request{Header: h}
 
-		out := getToken(r)
+		out := GetToken(r)
 		if out != tt.expected {
 			t.Errorf("%d: expected %q, got %q", i, tt.expected, out)
 		}
@@ -153,7 +154,7 @@ func TestContains(t *testing.T) {
 }
 
 func TestGetCachedCertsCacheHit(t *testing.T) {
-	var cacheValue []byte
+	/*var cacheValue []byte
 	mcGetStub := func(in, out proto.Message, _ *tu.RpcCallOptions) error {
 		req := in.(*mc_pb.MemcacheGetRequest)
 		if req.GetNameSpace() != certNamespace {
@@ -171,7 +172,7 @@ func TestGetCachedCertsCacheHit(t *testing.T) {
 	}
 	defer tu.RegisterAPIOverride("memcache", "Get", mcGetStub)()
 	r, deleteAppengineContext := tu.NewTestRequest("GET", "/", nil)
-	defer deleteAppengineContext()
+	defer deleteAppengineContext()*/
 
 	tts := []struct {
 		cacheValue string
@@ -188,8 +189,8 @@ func TestGetCachedCertsCacheHit(t *testing.T) {
 			&certsList{[]*certInfo{{"RS256", "123", "some-id", "123"}}}},
 	}
 	for i, tt := range tts {
-		cacheValue = []byte(tt.cacheValue)
-		out, err := getCachedCerts(NewContext(r))
+		p := newTestCertProvider([]byte(tt.cacheValue))
+		out, err := getCachedCerts(p)
 		switch {
 		case err != nil && tt.expected != nil:
 			t.Errorf("%d: didn't expect error %v", i, err)
@@ -203,7 +204,8 @@ func TestGetCachedCertsCacheHit(t *testing.T) {
 
 func TestGetCachedCertsCacheMiss(t *testing.T) {
 	type tt struct {
-		mcGetErr, mcSetErr, fetchErr error
+//		mcGetErr, mcSetErr, fetchErr error
+		certUri string
 		respStatus                   int32
 		respContent                  []byte
 		cacheControl, age            string
@@ -211,13 +213,9 @@ func TestGetCachedCertsCacheMiss(t *testing.T) {
 		expected        *certsList
 		shouldCallMcSet bool
 	}
-	var (
-		i           int
-		currTT      *tt
-		mcSetCalled bool
-	)
+	var currTT      *tt
 
-	mcGetStub := func(in, out proto.Message, _ *tu.RpcCallOptions) error {
+	/*mcGetStub := func(in, out proto.Message, _ *tu.RpcCallOptions) error {
 		return currTT.mcGetErr
 	}
 	mcSetStub := func(in, out proto.Message, _ *tu.RpcCallOptions) error {
@@ -248,31 +246,49 @@ func TestGetCachedCertsCacheMiss(t *testing.T) {
 	defer tu.RegisterAPIOverride("memcache", "Set", mcSetStub)()
 	defer tu.RegisterAPIOverride("urlfetch", "Fetch", fetchStub)()
 	r, deleteAppengineContext := tu.NewTestRequest("GET", "/", nil)
-	defer deleteAppengineContext()
+	defer deleteAppengineContext()*/
+
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("cache-control", currTT.cacheControl)
+		w.Header().Set("age", currTT.age)
+		w.WriteHeader(currTT.respStatus)
+		fmt.Fprintln(w, currTT.respContent)
+	}))
+	defer ts.Close()
+
+	/*r, err := http.NewRequest("GET", ts.URL, nil)
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}*/
+
+	/*save := tokeninfoEndpointUrl
+	defer func() {
+		tokeninfoEndpointUrl = save
+	}()
+	tokeninfoEndpointUrl = ts.URL*/
 
 	tts := []*tt{
-		// mcGet, mcSet, fetch err, http status, content,
-		// cache, age, expected, should mcSet?
-		{memcache.ErrCacheMiss, nil, nil, 200, []byte(`{"keyvalues":null}`),
+		// certUri, http status, content,
+		// cache, age, expected, cached?
+		{ts.URL, 200, []byte(`{"keyvalues":null}`),
 			"max-age=3600", "600", &certsList{}, true},
-		{memcache.ErrServerError, nil, nil, 200, []byte(`{"keyvalues":null}`),
+		{ts.URL, 200, []byte(`{"keyvalues":null}`),
 			"max-age=3600", "600", &certsList{}, false},
-		{memcache.ErrCacheMiss, memcache.ErrServerError, nil, 200,
-			[]byte(`{"keyvalues":null}`),
+		{ts.URL, 200, []byte(`{"keyvalues":null}`),
 			"max-age=3600", "600", &certsList{}, true},
-		{memcache.ErrCacheMiss, nil, errors.New("fetch RPC error"), 0, nil,
+		{"http:://wrong.com/", 0, nil,
 			"", "", nil, false},
-		{memcache.ErrCacheMiss, nil, nil, 400, []byte(""),
+		{ts.URL, 400, []byte(""),
 			"", "", nil, false},
-		{memcache.ErrCacheMiss, nil, nil, 200, []byte(`{"keyvalues":null}`),
+		{ts.URL, 200, []byte(`{"keyvalues":null}`),
 			"", "", &certsList{}, false},
 	}
 
-	c := NewContext(r)
-
-	for i, currTT = range tts {
-		mcSetCalled = false
-		out, err := getCachedCerts(c)
+	for i, currTT := range tts {
+		p := newTestCertProviderURI(currTT.certUri)
+		out, err := getCachedCerts(p)
 		switch {
 		case err != nil && currTT.expected != nil:
 			t.Errorf("%d: unexpected error: %v", i, err)
@@ -280,9 +296,9 @@ func TestGetCachedCertsCacheMiss(t *testing.T) {
 			t.Errorf("%d: expected error, got %#v", i, out)
 		default:
 			assertEquals(t, i, out, currTT.expected)
-			if currTT.shouldCallMcSet != mcSetCalled {
-				t.Errorf("%d: mc set called? %v, expected: %v",
-					i, mcSetCalled, currTT.shouldCallMcSet)
+			if currTT.shouldCache != p.cached {
+				t.Errorf("%d: cache called? %v, expected: %v",
+					i, p.cached, currTT.shouldCache)
 			}
 		}
 	}

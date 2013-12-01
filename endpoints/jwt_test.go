@@ -4,13 +4,7 @@ import (
 	"errors"
 	"testing"
 	"time"
-
-	"appengine/memcache"
-
-	mc_pb "appengine_internal/memcache"
-	"code.google.com/p/goprotobuf/proto"
-
-	tu "github.com/crhym3/aegot/testutils"
+	"encoding/json"
 )
 
 var jwtValidTokenObject = signedJWT{
@@ -71,7 +65,7 @@ const jwtInvalidAlgToken = ("eyJhbGciOiAiSFMyNTYiLCAidHlwIjogIkpXVCJ9." +
 
 // Private key for testing.
 // Used to create exponent, modulus and sign JWT token.
-const privateKeyPem = `-----BEGIN RSA PRIVATE KEY-----
+/*const privateKeyPem = `-----BEGIN RSA PRIVATE KEY-----
 MIIEpAIBAAKCAQEA4ej0p7bQ7L/r4rVGUz9RN4VQWoej1Bg1mYWIDYslvKrk1gpj
 7wZgkdmM7oVK2OfgrSj/FCTkInKPqaCR0gD7K80q+mLBrN3PUkDrJQZpvRZIff3/
 xmVU1WeruQLFJjnFb2dqu0s/FY/2kWiJtBCakXvXEOb7zfbINuayL+MSsCGSdVYs
@@ -97,7 +91,7 @@ bvvk/45Ta3XmzlxZcZSOct3O31Cw0i2XDVc018IY5be8qendDYM08icNo7vQYkRH
 504kQQKBgQDjx60zpz8ozvm1XAj0wVhi7GwXe+5lTxiLi9Fxq721WDxPMiHDW2XL
 YXfFVy/9/GIMvEiGYdmarK1NW+VhWl1DC5xhDg0kvMfxplt4tynoq1uTsQTY31Mx
 BeF5CT/JuNYk3bEBF0H/Q3VGO1/ggVS+YezdFbLWIRoMnLj6XCFEGg==
------END RSA PRIVATE KEY-----`
+-----END RSA PRIVATE KEY-----`*/
 
 // openssl rsa -in private.pem -noout -text
 const googCerts = `{
@@ -115,7 +109,7 @@ const googCerts = `{
 	}]
 }`
 
-func stubMemcacheGetCerts() func() {
+/*func stubMemcacheGetCerts() func() {
 	stub := func(in, out proto.Message, _ *tu.RpcCallOptions) error {
 		req := in.(*mc_pb.MemcacheGetRequest)
 		if req.GetNameSpace() == certNamespace &&
@@ -132,13 +126,54 @@ func stubMemcacheGetCerts() func() {
 		return memcache.ErrCacheMiss
 	}
 	return tu.RegisterAPIOverride("memcache", "Get", stub)
+}*/
+
+type testCertProvider struct {
+	certs *CertsList
+	cached bool
+	cachedBytes []byte
+	certUri string
+}
+
+func newTestCertProvider(certBytes []byte) *testCertProvider {
+	var certs CertsList
+	err := json.Unmarshal(certBytes, &certs)
+	if err != nil {
+		panic(err.Error())
+	}
+	return &testCertProvider{&certs, false, []byte{}, ""}
+}
+
+func newTestCertProviderURI(uri string) *testCertProvider {
+	return &testCertProvider{certUri: uri}
+}
+
+func (p *testCertProvider) CachedCerts() *CertsList {
+	var certs CertsList
+	err := json.Unmarshal(googCerts, &certs)
+	if err != nil {
+		panic(err.Error())
+	}
+	return &certs
+}
+
+func (p *testCertProvider) CacheCerts(certs *CertsList, exp time.Duration) {
+	p.cached = true
+	p.cachedBytes, err := json.Marshal(certs)
+	if err != nil {
+		panic(err.Error())
+	}
+}
+
+func (p *testCertProvider) CertUri() string {
+	return p.certUri
+}
+
+func (p *testCertProvider ) Issuer() string {
+	return "accounts.google.com"
 }
 
 func TestVerifySignedJwt(t *testing.T) {
-	defer stubMemcacheGetCerts()()
-	r, deleteAppengineContext := tu.NewTestRequest("GET", "/", nil)
-	defer deleteAppengineContext()
-
 	tts := []struct {
 		token    string
 		now      time.Time
@@ -153,10 +188,10 @@ func TestVerifySignedJwt(t *testing.T) {
 		{"another.invalid.token", jwtValidTokenTime, nil},
 	}
 
-	c := NewContext(r)
+	p := newTestCertProvider(googCerts, "")
 
 	for i, tt := range tts {
-		jwt, err := verifySignedJwt(c, tt.token, tt.now.Unix())
+		jwt, err := verifySignedJwt(p, tt.token, tt.now.Unix())
 		switch {
 		case err != nil && tt.expected != nil:
 			t.Errorf("%d: didn't expect error: %v", i, err)
@@ -189,10 +224,7 @@ func TestVerifyParsedToken(t *testing.T) {
 		{"", clientId, clientId, email, false},
 	}
 
-	r, deleteCtx := tu.NewTestRequest("GET", "/", nil)
-	defer deleteCtx()
-
-	c := NewContext(r)
+	p := newTestCertProvider(googCerts, "")
 
 	for i, tt := range tts {
 		jwt := signedJWT{
@@ -201,7 +233,7 @@ func TestVerifyParsedToken(t *testing.T) {
 			ClientID: tt.clientId,
 			Email:    tt.email,
 		}
-		out := verifyParsedToken(c, jwt, audiences, clientIds)
+		out := verifyParsedToken(p, jwt, audiences, clientIds)
 		if tt.valid != out {
 			t.Errorf("%d: expected token to be valid? %v, got: %v",
 				i, tt.valid, out)
@@ -210,13 +242,11 @@ func TestVerifyParsedToken(t *testing.T) {
 }
 
 func TestCurrentIDTokenUser(t *testing.T) {
-	jwtOrigParser := jwtParser
+	orig := verifyParsedToken
 	defer func() {
-		jwtParser = jwtOrigParser
+		verifyParsedToken = orig
 	}()
-	r, deleteAppengineContext := tu.NewTestRequest("GET", "/", nil)
-	defer deleteAppengineContext()
-	c := NewContext(r)
+	p := newTestCertProvider(googCerts, "")
 
 	aud := []string{jwtValidTokenObject.Audience, jwtValidTokenObject.ClientID}
 	azp := []string{jwtValidTokenObject.ClientID}
@@ -241,7 +271,7 @@ func TestCurrentIDTokenUser(t *testing.T) {
 
 	var currToken *signedJWT
 
-	jwtParser = func(Context, string, int64) (*signedJWT, error) {
+	verifyParsedToken = func(CertProvider, string, int64) (*signedJWT, error) {
 		if currToken == nil {
 			return nil, errors.New("Fake verification failed")
 		}
@@ -250,8 +280,8 @@ func TestCurrentIDTokenUser(t *testing.T) {
 
 	for i, tt := range tts {
 		currToken = tt.token
-		user, err := currentIDTokenUser(c,
-			jwtValidTokenString, aud, azp, jwtValidTokenTime.Unix())
+		user, err := currentIDTokenUser(p, jwtValidTokenString,
+			aud, azp, jwtValidTokenTime.Unix())
 		switch {
 		case tt.expectedEmail != "" && err != nil:
 			t.Errorf("%d: unexpected error: %v", i, err)

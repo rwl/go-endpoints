@@ -1,13 +1,10 @@
-package endpoints
+package google
 
 import (
-	"errors"
 	"testing"
-
-	fetch_pb "appengine_internal/urlfetch"
-	"code.google.com/p/goprotobuf/proto"
-
-	tu "github.com/crhym3/aegot/testutils"
+	"net/http"
+	"net/http/httptest"
+	"fmt"
 )
 
 const (
@@ -54,21 +51,27 @@ func TestTokeninfoContextCurrentOAuthClientID(t *testing.T) {
 
 	var currTT *test
 
-	fetchStub := func(in, out proto.Message, _ *tu.RpcCallOptions) error {
-		req := in.(*fetch_pb.URLFetchRequest)
-		url := tokeninfoEndpointUrl + "?access_token=" + token
-		if req.GetUrl() != url {
-			t.Errorf("fetch: expected URL %q, got %q", url, req.GetUrl())
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		at := r.URL.Query().Get("access_token")
+		if at != token {
+			t.Errorf("expected: %s actual: %s", token, at)
 		}
-		resp := out.(*fetch_pb.URLFetchResponse)
-		resp.StatusCode = proto.Int32(currTT.httpStatus)
-		resp.Content = currTT.content
-		return currTT.fetchErr
-	}
-	defer tu.RegisterAPIOverride("urlfetch", "Fetch", fetchStub)()
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(currTT.httpStatus)
+		fmt.Fprintln(w, currTT.content)
+	}))
+	defer ts.Close()
 
-	r, deleteCtx := tu.NewTestRequest("GET", "/", nil)
-	defer deleteCtx()
+	r, err := http.NewRequest("GET", ts.URL, nil)
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+
+	save := tokeninfoEndpointUrl
+	defer func() {
+		tokeninfoEndpointUrl = save
+	}()
+	tokeninfoEndpointUrl = ts.URL
 
 	tts := []*test{
 		// token, scope, clientId, httpStatus, content, fetchErr
@@ -80,15 +83,15 @@ func TestTokeninfoContextCurrentOAuthClientID(t *testing.T) {
 		{token, "invalid.scope", "", 200, tokeninfoValid, nil},
 		{token, "scope.one", "", 400, []byte("{}"), nil},
 		{token, "scope.one", "", 200, []byte(""), nil},
-		{token, "scope.one", "", -1, nil, errors.New("Fake urlfetch error")},
+//		{token, "scope.one", "", -1, nil, errors.New("Fake urlfetch error")},
 		{"", "scope.one", "", 200, tokeninfoValid, nil},
 	}
 
-	c := tokeninfoContextFactory(r)
+	p := NewTokenInfoProvider()
 	for i, tt := range tts {
 		currTT = tt
-		r.Header.Set("authorization", "bearer "+tt.token)
-		id, err := c.CurrentOAuthClientID(tt.scope)
+		r.Header.Set("Authorization", "bearer "+tt.token)
+		id, err := p.CurrentOAuthClientID(r, tt.scope)
 		switch {
 		case err != nil && tt.clientId != "":
 			t.Errorf("%d: expected %q, got error %v", i, tt.clientId, err)
@@ -101,24 +104,31 @@ func TestTokeninfoContextCurrentOAuthClientID(t *testing.T) {
 }
 
 func TestTokeninfoCurrentOAuthUser(t *testing.T) {
-	fetchStub := func(in, out proto.Message, _ *tu.RpcCallOptions) error {
-		resp := out.(*fetch_pb.URLFetchResponse)
-		resp.StatusCode = proto.Int32(200)
-		resp.Content = tokeninfoValid
-		return nil
-	}
-	defer tu.RegisterAPIOverride("urlfetch", "Fetch", fetchStub)()
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(200)
+		fmt.Fprintln(w, tokeninfoValid)
+	}))
+	defer ts.Close()
 
-	r, deleteCtx := tu.NewTestRequest("GET", "/", nil)
-	defer deleteCtx()
-	r.Header.Set("authorization", "bearer some_token")
-
-	c := tokeninfoContextFactory(r)
-	user, err := c.CurrentOAuthUser("scope.one")
+	r, err := http.NewRequest("GET", ts.URL, nil)
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
-	if user.Email != tokeinfoEmail {
-		t.Errorf("expected email %q, got %q", tokeinfoEmail, user.ID)
+	r.Header.Set("Authorization", "bearer some_token")
+
+	save := tokeninfoEndpointUrl
+	defer func() {
+		tokeninfoEndpointUrl = save
+	}()
+	tokeninfoEndpointUrl = ts.URL
+
+	p := NewTokenInfoProvider()
+	user, err := p.CurrentOAuthUser(r, "scope.one")
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+	if user.Email() != tokeinfoEmail {
+		t.Errorf("expected email %q, got %q", tokeinfoEmail, user.Email())
 	}
 }

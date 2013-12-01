@@ -1,9 +1,9 @@
-// This implementation of Context interface uses tokeninfo API to validate
+// This implementation of the Provider interface uses tokeninfo API to validate
 // bearer token.
 // 
-// It is intended to be used only on dev server.
+// It is intended to be used only in development.
 
-package endpoints
+package google
 
 import (
 	"encoding/json"
@@ -11,13 +11,17 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-
-	"appengine"
-	"appengine/urlfetch"
-	"appengine/user"
+	"log"
+	"github.com/rwl/go-endpoints/endpoints"
+	"time"
 )
 
-const tokeninfoEndpointUrl = "https://www.googleapis.com/oauth2/v2/tokeninfo"
+const CertUri = ("https://www.googleapis.com/service_accounts/" +
+		"v1/metadata/raw/federated-signon@system.gserviceaccount.com")
+const Issuer = "accounts.google.com"
+
+// Made variable for testing purposes.
+var tokeninfoEndpointUrl = "https://www.googleapis.com/oauth2/v2/tokeninfo"
 
 type tokeninfo struct {
 	IssuedTo      string `json:"issued_to"`
@@ -33,12 +37,11 @@ type tokeninfo struct {
 	ErrorDescription string `json:"error_description"`
 }
 
-// fetchTokeninfo retrieves token info from tokeninfoEndpointUrl  (tokeninfo API)
-func fetchTokeninfo(c Context, token string) (*tokeninfo, error) {
-	client := urlfetch.Client(c)
+// fetchTokeninfo retrieves token info from tokeninfoEndpointUrl (tokeninfo API)
+func fetchTokeninfo(token string) (*tokeninfo, error) {
 	url := tokeninfoEndpointUrl + "?access_token=" + token
-	c.Debugf("Fetching token info from %q", url)
-	resp, err := client.Get(url)
+	log.Printf("Fetching token info from %q", url)
+	resp, err := http.Get(url)
 	if err != nil {
 		return nil, err
 	}
@@ -70,12 +73,12 @@ func fetchTokeninfo(c Context, token string) (*tokeninfo, error) {
 
 // getScopedTokeninfo validates fetched token by matching tokeinfo.Scope
 // with scope arg.
-func getScopedTokeninfo(c Context, scope string) (*tokeninfo, error) {
-	token := getToken(c.HttpRequest())
+func getScopedTokeninfo(req *http.Request, scope string) (*tokeninfo, error) {
+	token := endpoints.GetToken(req)
 	if token == "" {
 		return nil, errors.New("No token found")
 	}
-	ti, err := fetchTokeninfo(c, token)
+	ti, err := fetchTokeninfo(token)
 	if err != nil {
 		return nil, err
 	}
@@ -88,18 +91,19 @@ func getScopedTokeninfo(c Context, scope string) (*tokeninfo, error) {
 		ti.Scope, scope)
 }
 
-// A context that uses tokeninfo API to validate bearer token
-type tokeninfoContext struct {
-	appengine.Context
+// A context that uses tokeninfo API to validate bearer token.
+type TokenInfoProvider struct {
+	cache *endpoints.CertsList
+	expiresAt time.Time
 }
 
-func (c *tokeninfoContext) HttpRequest() *http.Request {
-	return c.Request().(*http.Request)
+func NewTokenInfoProvider() *TokenInfoProvider {
+	return &TokenInfoProvider{}
 }
 
 // CurrentOAuthClientID returns a clientId associated with the scope.
-func (c *tokeninfoContext) CurrentOAuthClientID(scope string) (string, error) {
-	ti, err := getScopedTokeninfo(c, scope)
+func (p *TokenInfoProvider) CurrentOAuthClientID(req *http.Request, scope string) (string, error) {
+	ti, err := getScopedTokeninfo(req, scope)
 	if err != nil {
 		return "", err
 	}
@@ -107,17 +111,30 @@ func (c *tokeninfoContext) CurrentOAuthClientID(scope string) (string, error) {
 }
 
 // CurrentOAuthUser returns a user associated with the request in context.
-func (c *tokeninfoContext) CurrentOAuthUser(scope string) (*user.User, error) {
-	ti, err := getScopedTokeninfo(c, scope)
+func (p *TokenInfoProvider) CurrentOAuthUser(req *http.Request, scope string) (*endpoints.User, error) {
+	ti, err := getScopedTokeninfo(req, scope)
 	if err != nil {
 		return nil, err
 	}
-	return &user.User{Email: ti.Email}, nil
+	return &endpoints.OAuthUser{email: ti.Email}, nil
 }
 
-// tokeninfoContextFactory creates a new tokeninfoContext from r.
-// To be used as auth.go/ContextFactory.
-func tokeninfoContextFactory(r *http.Request) Context {
-	ac := appengine.NewContext(r)
-	return &tokeninfoContext{ac}
+func (p *TokenInfoProvider) CachedCerts() *endpoints.CertsList {
+	if time.Now().UTC().Before(p.expiresAt) {
+		return p.cache
+	}
+	return nil
+}
+
+func (p *TokenInfoProvider) CacheCerts(certs *endpoints.CertsList, expiration time.Duration) {
+	p.expiresAt = time.Now().UTC().Add(expiration)
+	p.cache = certs
+}
+
+func (p *TokenInfoProvider) CertUri() string {
+	return CertUri
+}
+
+func (p *TokenInfoProvider) Issuer() string {
+	return Issuer
 }

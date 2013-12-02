@@ -109,10 +109,10 @@ func getTokeninfo(req *http.Request) (*tokeninfo, error) {
 }
 
 type AmazonUser struct {
-	UserId string `json:"user_id"`
-	Email         string `json:"email"`
-	Name         string `json:"name"`
-	PostalCode string `json:"postal_code"`
+	UserId string `json:"user_id"` // scopes: profile profile:user_id
+	Email         string `json:"email"`// scope: profile
+	Name         string `json:"name"`// scope: profile
+	PostalCode string `json:"postal_code"`// scope: postal_code
 	// ErrorDescription is populated when an error occurs. Usually, the response
 	// either contains only ErrorDescription or the fields above
 	ErrorDescription string `json:"error_description"`

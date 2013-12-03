@@ -103,18 +103,18 @@ func getScopedTokeninfo(req *http.Request, scope string) (*GoogleUser, error) {
 		ti.Scope, scope)
 }
 
-// A context that uses tokeninfo API to validate bearer token.
-type TokenInfoProvider struct {
+// A provider that uses the tokeninfo API to validate bearer tokens.
+type GoogleProvider struct {
 	cache *endpoints.CertsList
 	expiresAt time.Time
 }
 
-func NewTokenInfoProvider() *TokenInfoProvider {
-	return &TokenInfoProvider{}
+func NewGoogleProvider() *GoogleProvider {
+	return &GoogleProvider{}
 }
 
 // CurrentOAuthClientID returns a clientId associated with the scope.
-func (p *TokenInfoProvider) CurrentOAuthClientID(req *http.Request, scope string) (string, error) {
+func (p *GoogleProvider) CurrentOAuthClientID(req *http.Request, scope string) (string, error) {
 	ti, err := getScopedTokeninfo(req, scope)
 	if err != nil {
 		return "", err
@@ -123,7 +123,7 @@ func (p *TokenInfoProvider) CurrentOAuthClientID(req *http.Request, scope string
 }
 
 // CurrentOAuthUser returns a user associated with the request in context.
-func (p *TokenInfoProvider) CurrentOAuthUser(req *http.Request, scope string) (*endpoints.User, error) {
+func (p *GoogleProvider) CurrentOAuthUser(req *http.Request, scope string) (*endpoints.User, error) {
 	ti, err := getScopedTokeninfo(req, scope)
 	if err != nil {
 		return nil, err
@@ -131,22 +131,22 @@ func (p *TokenInfoProvider) CurrentOAuthUser(req *http.Request, scope string) (*
 	return ti, nil
 }
 
-func (p *TokenInfoProvider) CachedCerts() *endpoints.CertsList {
+func (p *GoogleProvider) CertUri() string {
+	return CertUri
+}
+
+func (p *GoogleProvider) Issuer() string {
+	return Issuer
+}
+
+func (p *GoogleProvider) CachedCerts() *endpoints.CertsList {
 	if time.Now().UTC().Before(p.expiresAt) {
 		return p.cache
 	}
 	return nil
 }
 
-func (p *TokenInfoProvider) CacheCerts(certs *endpoints.CertsList, expiration time.Duration) {
+func (p *GoogleProvider) CacheCerts(certs *endpoints.CertsList, expiration time.Duration) {
 	p.expiresAt = time.Now().UTC().Add(expiration)
 	p.cache = certs
-}
-
-func (p *TokenInfoProvider) CertUri() string {
-	return CertUri
-}
-
-func (p *TokenInfoProvider) Issuer() string {
-	return Issuer
 }

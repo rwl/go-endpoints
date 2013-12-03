@@ -61,10 +61,13 @@ type Provider interface {
 }
 
 type CertProvider interface {
-	CachedCerts() *CertsList
-	CacheCerts(*CertsList, time.Duration)
 	CertUri() string
 	Issuer() string
+}
+
+type CachingProvider interface {
+	CachedCerts() *CertsList
+	CacheCerts(*CertsList, time.Duration)
 }
 
 type ClientProvider interface {
@@ -178,10 +181,15 @@ func getCertExpirationTime(h http.Header) time.Duration {
 // GetCachedCerts fetches public certificates info from DefaultCertUri and
 // caches it for the duration specified in Age header of a response.
 func getCachedCerts(cp CertProvider) (*CertsList, error) {
-	certs, err := cp.CachedCerts()
+	cachingProvider, caching := cp.(CachingProvider)
 
-	if err == nil && certs != nil {
-		return certs, nil
+	var certs *CertsList
+	if (caching) {
+		certs, err := cachingProvider.CachedCerts()
+
+		if err == nil && certs != nil {
+			return certs, nil
+		}
 	}
 
 	var client *http.Client
@@ -209,9 +217,11 @@ func getCachedCerts(cp CertProvider) (*CertsList, error) {
 		return nil, err
 	}
 
-	expiration := getCertExpirationTime(resp.Header)
-	if expiration > 0 {
-		cp.CacheCerts(certs, expiration)
+	if caching {
+		expiration := getCertExpirationTime(resp.Header)
+		if expiration > 0 {
+			cachingProvider.CacheCerts(certs, expiration)
+		}
 	}
 	return certs, nil
 }

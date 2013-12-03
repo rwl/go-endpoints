@@ -57,7 +57,7 @@ type tokeninfo struct {
 	ExpiresIn int `json:"exp"`
 
 	// The time the token was issued. The value is number of seconds from 1970-01-01T0:0:0Z as measured in UTC.
-	IssuedAt int `json:"iat"`
+	IssuedAt int64 `json:"iat"`
 
 	// ErrorDescription is populated when an error occurs. Usually, the response
 	// either contains only ErrorDescription or the fields above

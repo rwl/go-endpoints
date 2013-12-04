@@ -39,7 +39,7 @@ var (
 	}`)
 )
 
-func TestTokeninfoContextCurrentOAuthClientID(t *testing.T) {
+func TestGoogleProviderCurrentOAuthClientID(t *testing.T) {
 	const token = "some_token"
 
 	type test struct {
@@ -87,7 +87,7 @@ func TestTokeninfoContextCurrentOAuthClientID(t *testing.T) {
 		{"", "scope.one", "", 200, tokeninfoValid, nil},
 	}
 
-	p := NewTokenInfoProvider()
+	p := NewGoogleProvider()
 	for i, tt := range tts {
 		currTT = tt
 		r.Header.Set("Authorization", "bearer "+tt.token)
@@ -103,7 +103,7 @@ func TestTokeninfoContextCurrentOAuthClientID(t *testing.T) {
 	}
 }
 
-func TestTokeninfoCurrentOAuthUser(t *testing.T) {
+func TestGoogleProviderCurrentOAuthUser(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(200)
@@ -123,7 +123,7 @@ func TestTokeninfoCurrentOAuthUser(t *testing.T) {
 	}()
 	tokeninfoEndpointUrl = ts.URL
 
-	p := NewTokenInfoProvider()
+	p := NewGoogleProvider()
 	user, err := p.CurrentOAuthUser(r, "scope.one")
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)

@@ -13,23 +13,6 @@ import (
 const debugUri = "https://graph.facebook.com/debug_token?input_token=%s&access_token=%s"
 const graphUri = "https://graph.facebook.com/me?access_token=%s"
 
-/*
-"data": {
-	"app_id": 138483919580948,
-	"application": "Social Cafe",
-	"expires_at": 1352419328,
-	"is_valid": true,
-	"issued_at": 1347235328,
-	"metadata": {
-		"sso": "iphone-safari"
-	},
-	"scopes": [
-		"email",
-		"publish_actions"
-	],
-	"user_id": 1207059
-}
-*/
 type debugResponse struct {
 	Data *Data `json:"data,omitempty"`
 	Error *Error `json:"error,omitempty"`
@@ -46,14 +29,6 @@ type Data struct {
 	UserId int64 `json:"user_id"`
 }
 
-/*
-"error": {
- "message": "Message describing the error",
- "type": "OAuthException",
- "code": 190 ,
- "error_subcode": 460
-}
-*/
 type Error struct {
 	Message string `json:"message"`
 	Type string `json:"type"`
